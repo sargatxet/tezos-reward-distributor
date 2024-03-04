@@ -2,7 +2,11 @@ import json
 import logging
 import queue
 import signal
-from _signal import SIGABRT, SIGILL, SIGSEGV, SIGTERM
+import platform
+from signal import SIGABRT, SIGILL, SIGSEGV, SIGTERM
+
+if platform.system() != "Windows":
+    from signal import SIGUSR1, SIGUSR2
 from enum import Enum, auto
 from time import sleep
 
@@ -303,6 +307,9 @@ class ProcessLifeCycle:
     def do_register_signals(self, e):
         for sig in (SIGABRT, SIGILL, SIGSEGV, SIGTERM):
             signal.signal(sig, self.stop_handler)
+        if "SIGUSR1" in globals():
+            signal.signal(SIGUSR1, self.producer_exit_handler)
+            signal.signal(SIGUSR2, self.stop_handler)
 
     def do_init_service_fees(self, e):
         self.__srvc_fee_calc = ServiceFeeCalculator(
@@ -380,6 +387,11 @@ class ProcessLifeCycle:
     def stop_handler(self, signum, frame):
         logger.info("Application stop handler called: {}".format(signum))
         self.shut_down_on_error()
+
+    def producer_exit_handler(self, signum, frame):
+        logger.info("Application stop handler called by producer: {}".format(signum))
+        self.fsm.trigger_event(TrdEvent.SHUT_DOWN_ON_DEMAND)
+        exit_program(ExitCode.SUCCESS, "Shutdown.")
 
     def shut_down_on_error(self):
         self.fsm.trigger_event(TrdEvent.SHUT_DOWN_ON_ERROR)
